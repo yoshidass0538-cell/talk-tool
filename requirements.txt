@@ -1,0 +1,9 @@
+simple-salesforce
+python-dotenv
+streamlit
+pandas
+streamlit-aggrid
+streamlit-sortables
+gspread
+google-auth
+requests

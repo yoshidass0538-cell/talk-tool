@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 機密・無関係バイナリ
+yoshida0538-f46ce1eea153.json
+*.exe
