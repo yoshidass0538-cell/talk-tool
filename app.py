@@ -129,7 +129,7 @@ def _sf():
 # ----------------------------------------------------------------------
 st.sidebar.markdown(
     '<div style="margin-bottom:10px;">'
-    '<span style="font-size:1.5rem;font-weight:bold;">トークスクリプト</span>'
+    '<span style="font-size:1.5rem;font-weight:bold;">営業トークスクリプト</span>'
     '</div>',
     unsafe_allow_html=True,
 )
