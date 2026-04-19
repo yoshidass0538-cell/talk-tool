@@ -337,7 +337,7 @@ if selected_key == "_master":
     if not st.session_state.get("master_auth"):
         pw = st.text_input("パスワードを入力してください", type="password", key="master_pw")
         if pw:
-            if pw == "yoshida":
+            if pw == "nakagawa":
                 st.session_state["master_auth"] = True
                 st.rerun()
             else:
