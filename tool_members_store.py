@@ -37,6 +37,7 @@ CELL = "A1"
 _DEFAULT_BOARDS = [
     {"suffix": "fc1week", "label": "1週間後FCトーク"},
     {"suffix": "shiryou", "label": "1週間後FC 資料"},
+    {"suffix": "sokushin", "label": "促進用トーク"},
 ]
 
 # 初期メンバー（初回デプロイ時のシード）

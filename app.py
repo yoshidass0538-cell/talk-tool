@@ -695,6 +695,7 @@ if selected_key == "_master":
             update_section_rule,
             SONET_FUBI_KEYS,
             SONET_CLOSING_KEYS,
+            SONET_SOKUSHIN_KEYS,
             LINE_TEMPLATE_KEYS,
             clear_template_cache,
         )
@@ -703,6 +704,56 @@ if selected_key == "_master":
 
         templates = get_templates()
         _sections_by_kind = get_sections_by_kind()
+
+        # 促進用トーク（代コン不備解消用）は専用編集UIに分岐
+        if _selected_script == "促進用トーク":
+            st.markdown(
+                '<div style="background:#2E8B57;color:#fff;padding:10px 16px;'
+                'border-radius:8px;font-weight:700;margin:8px 0 12px 0;">'
+                '🎯 促進用トーク テンプレート（代コン不備解消用 5種）</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "ダイコンステータスに応じて自動で切り替わります。"
+                "工事日調整希望／API工事取得→工事取得3者間 ／ 番ポ不備→番ポ不備FC ／ "
+                "住所確認→住所確認FC ／ 現地調査必要→現地調査3者間 ／ 有派遣へ変更必要→有派遣変更3者間"
+            )
+            _sokushin_templates = templates.setdefault("Sonet_sokushin", {})
+            for skey in SONET_SOKUSHIN_KEYS:
+                with st.expander(f"🎯 {skey}", expanded=False):
+                    current = _sokushin_templates.get(skey, "")
+                    new_val = st.text_area(
+                        skey,
+                        value=current,
+                        height=320,
+                        key=f"master_sokushin_only_{skey}",
+                        label_visibility="collapsed",
+                    )
+                    if new_val != current:
+                        _sokushin_templates[skey] = new_val
+
+            st.divider()
+            col_save_sk, col_reload_sk = st.columns([1, 1])
+            if col_save_sk.button(
+                "💾 促進用トーク を保存",
+                key="talk_save_sokushin_only",
+                type="primary",
+                use_container_width=True,
+            ):
+                ok, msg = save_templates()
+                st.toast(msg, icon="✅" if ok else "⚠️")
+                if ok:
+                    st.session_state["selected"] = "_master"
+                    st.rerun()
+            if col_reload_sk.button(
+                "⟳ 再読み込み",
+                key="talk_reload_sokushin_only",
+                use_container_width=True,
+            ):
+                clear_template_cache()
+                st.session_state["selected"] = "_master"
+                st.rerun()
+            st.stop()
 
         talk_kind_tabs = st.tabs(["So-net光", "NURO光"])
         _kind_meta = [
@@ -1243,6 +1294,7 @@ if selected_key.startswith("talk_script_"):
         detect_kind,
         normalize_phone,
         clear_caches,
+        resolve_lookup_sheet,
     )
 
     # メンバー別ユニーク接尾辞 → session_state を独立化
@@ -1250,6 +1302,11 @@ if selected_key.startswith("talk_script_"):
     _parsed = parse_talk_script_key(selected_key)
     _member_name = _parsed[0] if _parsed else ""
     _board_label = _parsed[1] if _parsed else metric.label
+
+    # ボードsuffixからlookup先ワークシートを解決（1週間後FC / 代コン不備 など）
+    _key_parts = selected_key.split("_", 3)
+    _board_suffix = _key_parts[3] if len(_key_parts) >= 4 else ""
+    _lookup_sheet = resolve_lookup_sheet(_board_suffix)
 
     st.caption(f"電話番号を貼り付けると顧客情報を引き当て、商材に応じたトークスクリプトを表示します。（{_member_name} 専用ボード）")
 
@@ -1272,7 +1329,7 @@ if selected_key.startswith("talk_script_"):
         st.info("電話番号を入力してください。")
         st.stop()
 
-    info = lookup_customer(phone_clean)
+    info = lookup_customer(phone_clean, _lookup_sheet)
     if info is None:
         st.warning(f"電話番号 `{phone_clean}` に該当する顧客情報が見つかりません。")
         st.stop()
@@ -1412,10 +1469,93 @@ if selected_key.startswith("talk_script_"):
         unsafe_allow_html=True,
     )
 
+    # 促進用トーク（代コン不備）：ダイコンステータス別の補足カードを表示
+    if _board_suffix == "sokushin":
+        from talk_template_store import select_sokushin_key as _select_sokushin_key_card
+        _daikon_for_card = (info.get("ダイコンステータス") or "").strip()
+        _sokushin_key_for_card = _select_sokushin_key_card(_daikon_for_card)
+        _supplement_fields: list[tuple[str, str]] = []
+        if _sokushin_key_for_card == "工事取得3者間":
+            _supplement_fields = [
+                ("工事予定日", "工事予定日（引用）"),
+                ("工事Ⅰ状況", "工事Ⅰ状況（引用）"),
+                ("申込時工事取得状況", "申込時工事取得状況"),
+                ("初回取次(API取得工事日)", "初回取次(API取得工事日)"),
+                ("工事取得FC回数", "工事取得FC回数"),
+                ("API取次対象", "API取次対象"),
+                ("代理店コンサル希望", "代理店コンサル希望"),
+            ]
+        elif _sokushin_key_for_card == "番ポ不備FC":
+            _supplement_fields = [
+                ("固定申込", "固定申込"),
+                ("固定電話1", "固定電話1（引用）"),
+                ("おでん案内フラグ", "おでん案内フラグ"),
+                ("開通後ホーム電話案内", "開通後ホーム電話案内"),
+            ]
+        if _supplement_fields:
+            _supp_rows = "".join(
+                f'<tr><td style="padding:4px 8px;width:32%;color:#666;">{lbl}</td>'
+                f'<td style="padding:4px 8px;font-weight:600;">{_v(col)}</td></tr>'
+                for lbl, col in _supplement_fields
+            )
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,0.85);border-left:6px solid #2E8B57;'
+                f'border-radius:8px;padding:14px 20px;margin:8px 0 16px 0;'
+                f'box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
+                f'<div style="font-size:1.0rem;font-weight:700;color:#2E8B57;margin-bottom:6px;">'
+                f'🎯 促進用 補足情報（{_sokushin_key_for_card}）</div>'
+                f'<table style="width:100%;border-collapse:collapse;font-size:0.92rem;color:#222;">'
+                f'{_supp_rows}</table></div>',
+                unsafe_allow_html=True,
+            )
+
     # --- 前確OKコメント全文（折りたたみ） ---
     if _zk["found"]:
         with st.expander(f"📋 前確OKコメント全文（{_zk['activity_date']}）", expanded=False):
             st.code(_zk["description"], language=None)
+
+    # 促進用トーク（代コン不備）：ダイコンステータスに応じて5種テンプレから選択表示
+    if _board_suffix == "sokushin":
+        import html as _html_sk
+        from talk_template_store import (
+            get_templates as _get_tpl_sk,
+            select_sokushin_key,
+        )
+        from nanori_master_store import apply_nanori_substitution as _apply_nanori_sk
+        from replace_master_store import apply_replace_substitution as _apply_replace_sk
+
+        _daikon_val = (info.get("ダイコンステータス") or "").strip()
+        _sokushin_key = select_sokushin_key(_daikon_val)
+
+        if not _sokushin_key:
+            st.warning(
+                f"ダイコンステータス「{_daikon_val or '(空)'}」は促進用トークの対応外です。"
+                "対応値: 工事日調整希望 / API工事取得 / 番ポ不備 / 住所確認 / 現地調査必要 / 有派遣へ変更必要"
+            )
+            st.stop()
+
+        _sokushin_tpl = _get_tpl_sk().get("Sonet_sokushin", {})
+        _body_sk = _sokushin_tpl.get(_sokushin_key, "")
+
+        st.subheader(f"🎯 促進用トーク　|　{_sokushin_key}")
+        st.caption(f"ダイコンステータス: **{_daikon_val}** → テンプレ: **{_sokushin_key}**")
+
+        if not _body_sk:
+            st.info(f"「{_sokushin_key}」のテンプレートが未入力です。マスタ画面の「🎯 促進用」タブから編集してください。")
+            st.stop()
+
+        # 商流別名乗り・汎用置換を適用
+        _body_sk = _apply_nanori_sk(_body_sk, info)
+        _body_sk = _apply_replace_sk(_body_sk)
+
+        _safe_sk = _html_sk.escape(_body_sk).replace("\n", "<br>").replace(" ", "&nbsp;")
+        st.markdown(
+            f'<div style="background:rgba(255,255,255,0.85);border-left:6px solid #2E8B57;'
+            f'border-radius:6px;padding:14px 20px;font-size:0.95rem;line-height:1.7;color:#1a1a1a;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.06);white-space:pre-wrap;">{_safe_sk}</div>',
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
     # --- LINEテンプレ（折りたたみ） ---
     import html as _html

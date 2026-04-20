@@ -80,6 +80,18 @@ SONET_FUBI_KEYS = [
     "詳細確認待ち",
 ]
 
+# 促進用トーク（代コン不備解消用）の5種テンプレートキー
+SONET_SOKUSHIN_KEYS = [
+    "工事取得3者間",
+    "番ポ不備FC",
+    "住所確認FC",
+    "現地調査3者間",
+    "有派遣変更3者間",
+]
+
+# 促進用トーク デフォルト（空テンプレ。マスタで編集する想定）
+DEFAULT_SONET_SOKUSHIN: dict[str, str] = {k: "" for k in SONET_SOKUSHIN_KEYS}
+
 # 締めセクションのバリエーションキー（Sonetのみ）
 SONET_CLOSING_KEYS = [
     "利用回線あり",
@@ -680,6 +692,8 @@ def _parse_defaults_from_source() -> dict[str, dict[str, str]]:
     out["Sonet_fubi"] = dict(DEFAULT_SONET_FUBI)
     # 締めの2種（利用回線あり/不明）もハードコードのデフォルトを使う
     out["Sonet_closing"] = dict(DEFAULT_SONET_CLOSING)
+    # 促進用5種（代コン不備解消用）もハードコードのデフォルト
+    out["Sonet_sokushin"] = dict(DEFAULT_SONET_SOKUSHIN)
     # LINEテンプレ（Sonet/NUROそれぞれ3種）はソースシートから取得
     from talk_script_store import load_line_templates
     try:
@@ -706,6 +720,22 @@ def select_fubi_key(daikon_status: str, koji_yotei_hi: str) -> str:
     if s == "工事日調整希望":
         return "工事取得"
     return s
+
+
+_SOKUSHIN_MAPPING = {
+    "工事日調整希望": "工事取得3者間",
+    "API工事取得": "工事取得3者間",
+    "番ポ不備": "番ポ不備FC",
+    "住所確認": "住所確認FC",
+    "現地調査必要": "現地調査3者間",
+    "有派遣へ変更必要": "有派遣変更3者間",
+}
+
+
+def select_sokushin_key(daikon_status: str) -> str:
+    """ダイコンステータスから促進用トークのテンプレキーを決定。未対応値は空文字。"""
+    s = (daikon_status or "").strip()
+    return _SOKUSHIN_MAPPING.get(s, "")
 
 
 def apply_furigana_substitution(body: str, furigana: str) -> str:
@@ -841,6 +871,11 @@ def _deserialize(raw: str) -> dict:
         data["Sonet_closing"] = {}
     for key in SONET_CLOSING_KEYS:
         data["Sonet_closing"].setdefault(key, DEFAULT_SONET_CLOSING.get(key, ""))
+    # 促進用5種（Sonet_sokushin）も欠けてればデフォルトで埋める
+    if "Sonet_sokushin" not in data:
+        data["Sonet_sokushin"] = {}
+    for key in SONET_SOKUSHIN_KEYS:
+        data["Sonet_sokushin"].setdefault(key, DEFAULT_SONET_SOKUSHIN.get(key, ""))
     # LINEテンプレ（Sonet_line / NURO_line）も欠けてればソースシートから補完
     for store_key in ("Sonet_line", "NURO_line"):
         if store_key not in data:

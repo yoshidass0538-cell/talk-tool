@@ -24,6 +24,14 @@ TALK_SCRIPT_SHEET_ID = "15kqCJoZYQSrkvqwecmLgeS9aJBlJAVdoSOP1j822zS0"
 # 顧客データシート（sync_report.pyで自動同期される先）
 LOOKUP_SHEET_ID = "1iNtEakg4U4C3p7uQlVcJIzojnUd8uW5Ykl8swQRQD5U"
 LOOKUP_SHEET = "1週間後FC該当案件"
+DAICON_LOOKUP_SHEET = "代コン不備該当案件"
+
+# suffix → ワークシート名 のマッピング
+LOOKUP_SHEETS_BY_SUFFIX = {
+    "fc1week": LOOKUP_SHEET,
+    "shiryou": LOOKUP_SHEET,
+    "sokushin": DAICON_LOOKUP_SHEET,
+}
 
 # 商材種別 → トークシート名
 SCRIPT_SHEETS = {
@@ -61,8 +69,8 @@ def normalize_phone(phone: str) -> str:
 
 
 @st.cache_data(ttl=1800, show_spinner="顧客データを取得中...")
-def load_customer_data() -> pd.DataFrame:
-    """1週間後FC該当案件シートを丸ごとDataFrameで読み込み、電話番号正規化列を付与。
+def load_customer_data(sheet_name: str = LOOKUP_SHEET) -> pd.DataFrame:
+    """指定したワークシートを丸ごとDataFrameで読み込み、電話番号正規化列を付与。
     TTL 30分（API制限回避のため長め）。
     """
     import time as _time
@@ -77,7 +85,7 @@ def load_customer_data() -> pd.DataFrame:
     for attempt in range(4):
         try:
             sh = client.open_by_key(LOOKUP_SHEET_ID)
-            ws = sh.worksheet(LOOKUP_SHEET)
+            ws = sh.worksheet(sheet_name)
             values = ws.get_all_values()
             break
         except Exception as e:
@@ -105,15 +113,20 @@ def load_customer_data() -> pd.DataFrame:
     return df
 
 
-def get_lookup_columns() -> list[str]:
+def get_lookup_columns(sheet_name: str = LOOKUP_SHEET) -> list[str]:
     """顧客lookupシートのヘッダー列名一覧を返す（内部列を除外）。"""
-    df = load_customer_data()
+    df = load_customer_data(sheet_name)
     if df.empty:
         return []
     return [c for c in df.columns if not c.startswith("_")]
 
 
-def lookup_customer(phone: str) -> dict | None:
+def resolve_lookup_sheet(suffix: str) -> str:
+    """ボードsuffixからワークシート名を解決。未登録なら1週間後FC（後方互換）。"""
+    return LOOKUP_SHEETS_BY_SUFFIX.get(suffix, LOOKUP_SHEET)
+
+
+def lookup_customer(phone: str, sheet_name: str = LOOKUP_SHEET) -> dict | None:
     """
     電話番号で顧客情報を引き当て。複数ヒット時は申込日（案件進捗管理: エントリ日）が
     最も新しい1件を返す。
@@ -121,7 +134,7 @@ def lookup_customer(phone: str) -> dict | None:
     phone_n = normalize_phone(phone)
     if not phone_n:
         return None
-    df = load_customer_data()
+    df = load_customer_data(sheet_name)
     if df.empty:
         return None
     hit = df[df["_phone_normalized"] == phone_n]
